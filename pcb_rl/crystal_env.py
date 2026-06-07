@@ -65,7 +65,7 @@ class CrystalRLEnv(gym.Env):
         # DRC parameters
         self.min_clearance_cells = DRC.min_clearance_cells
         self.min_crystal_to_mcu = DRC.min_crystal_to_mcu
-        self.crystal_forbidden = DRC.crystal_under禁止
+        self.crystal_forbidden = DRC.crystal_under_forbidden
         
         # Action space: 9 discrete actions (8 directions + STOP)
         self.action_space = spaces.Discrete(ACTION.n_actions)

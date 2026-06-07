@@ -5,4 +5,4 @@ kicad , pcb  design ,   AI
 
 
 
-<img width="3200" height="2000" alt="截图 2026-03-06 11-29-08" src="https://github.com/user-attachments/assets/a5c043f9-1538-4221-b71a-424246c3e8f4" />
+<img width="3200" height="2000" alt="스크린샷 2026-03-06 11-29-08" src="https://github.com/user-attachments/assets/a5c043f9-1538-4221-b71a-424246c3e8f4" />

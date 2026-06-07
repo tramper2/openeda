@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-STM32最小系统PCB生成脚本 - 完整生产版 V7.0
-真正可用的PCB设计，包含完整DRC验证
+STM32 최소 시스템 PCB 생성 스크립트 - 완제품 생산 버전 V7.0
+실제 제작 및 사용 가능한 PCB 디자인으로, 완벽한 DRC 검증 포함
 
-功能:
-1. 精确重叠检测 - 考虑元件实际尺寸和旋转
-2. 走线碰撞检测 - 走线vs元件、走线vs走线、走线vs过孔
-3. 智能铺铜 - GND和3V3电源平面
-4. 完整DRC检查 - 间距、短路、开路、未连接网络
-5. 制造文件生成准备 - 钻孔、Gerber导出准备
+기능:
+1. 정밀 중첩 검사 - 부품의 실제 크기와 회전각 고려
+2. 배선 충돌 검사 - 배선 vs 부품, 배선 vs 배선, 배선 vs 비아
+3. 스마트 동박 배치 - GND 및 3V3 전원 평면
+4. 완벽한 DRC 검사 - 간격, 쇼트(단락), 오픈(단선), 미연결 넷
+5. 제조 파일 생성 준비 - 드릴링, Gerber 내보내기 준비
 """
 
 import pcbnew
@@ -18,7 +18,7 @@ import sys
 import math
 from typing import List, Tuple, Dict, Optional, Set
 
-# ========== 配置区域 ==========
+# ========== 설정 영역 ==========
 LIB_PATHS = {
     'qfp': "/usr/share/kicad/footprints/Package_QFP.pretty",
     'capacitor': "/usr/share/kicad/footprints/Capacitor_SMD.pretty",
@@ -31,7 +31,7 @@ LIB_PATHS = {
 
 OUTPUT_FILE = "stm32_minimal_v7.kicad_pcb"
 
-# PCB配置
+# PCB 설정
 BOARD_WIDTH = 60
 BOARD_HEIGHT = 50
 MCU_CENTER_X = 30
@@ -39,7 +39,7 @@ MCU_CENTER_Y = 25
 MCU_SIZE = 7.0
 MCU_HALF = MCU_SIZE / 2
 
-# DRC规则 (单位: mm)
+# DRC 규칙 (단위: mm)
 DRC_RULES = {
     'min_track_width': 0.2,
     'min_via_size': 0.6,
@@ -52,7 +52,7 @@ DRC_RULES = {
     'min_copper_area': 0.5,
 }
 
-# 间距规则
+# 간격 규칙
 SPACING_RULES = {
     'crystal_to_cap': 0.05,
     'smd_0402': 0.3,
@@ -63,7 +63,7 @@ SPACING_RULES = {
     'default': 0.3,
 }
 
-# 元件定义
+# 부품 정의
 COMPONENT_DEFS = {
     'U1': {'lib': 'qfp', 'fp': 'LQFP-48_7x7mm_P0.5mm', 'value': 'STM32F103C8T6', 'type': 'mcu', 'size': (7.0, 7.0)},
     'Y1': {'lib': 'crystal', 'fp': 'Crystal_SMD_3225-4Pin_3.2x2.5mm', 'value': '8MHz', 'type': 'crystal', 'size': (3.2, 2.5)},
@@ -91,12 +91,12 @@ COMPONENT_DEFS = {
     'U2': {'lib': 'sot', 'fp': 'SOT-223-3_TabPin2', 'value': 'AMS1117-3.3', 'type': 'regulator', 'size': (6.5, 3.5)},
 }
 
-# 网络定义
+# 넷 정의
 NET_DEFS = {
     "GND": {
         'pins': [
             ("U1", [8, 23, 35, 47]),  # VSS
-            ("Y1", [2, 4]),  # Crystal GND shield
+            ("Y1", [2, 4]),  # 크리스탈 GND 쉴드
             ("C1", [2]), ("C2", [2]), ("C3", [2]), ("C4", [2]),
             ("C5", [2]), ("C6", [2]), ("C7", [2]), ("C8", [2]),
             ("C9", [2]), ("C10", [2]), ("C11", [2]), ("C13", [2]),
@@ -129,17 +129,17 @@ NET_DEFS = {
 # ==============================
 
 class Rectangle:
-    """矩形区域，用于碰撞检测"""
+    """직사각형 영역, 충돌 검사용"""
     def __init__(self, x: float, y: float, w: float, h: float, rotation: float = 0):
         self.x = x
         self.y = y
         self.w = w
         self.h = h
-        self.rotation = rotation  # 度数
+        self.rotation = rotation  # 각도(도)
         self.center = (x, y)
         
     def get_corners(self) -> List[Tuple[float, float]]:
-        """获取旋转后的四个角点"""
+        """회전 후의 네 모퉁이 좌표 획득"""
         rad = math.radians(self.rotation)
         cos_r = math.cos(rad)
         sin_r = math.sin(rad)
@@ -147,7 +147,7 @@ class Rectangle:
         half_w = self.w / 2
         half_h = self.h / 2
         
-        # 原始角点 (相对于中心)
+        # 원본 코너점 (중심 기준)
         corners = [
             (-half_w, -half_h),
             (half_w, -half_h),
@@ -155,7 +155,7 @@ class Rectangle:
             (-half_w, half_h),
         ]
         
-        # 旋转并平移
+        # 회전 및 평행 이동
         rotated = []
         for dx, dy in corners:
             rx = dx * cos_r - dy * sin_r + self.x
@@ -165,18 +165,18 @@ class Rectangle:
         return rotated
     
     def intersects(self, other: 'Rectangle', clearance: float = 0.0) -> bool:
-        """检查两个矩形是否相交（考虑间距）"""
-        # 使用分离轴定理(SAT)
+        """두 직사각형이 겹치는지 검사 (간격 고려)"""
+        # 분리축 이론(SAT) 사용
         self_corners = self.get_corners()
         other_corners = other.get_corners()
         
-        # 获取所有需要测试的轴
+        # 검사할 모든 축 추출
         axes = []
         for i in range(4):
             p1 = self_corners[i]
             p2 = self_corners[(i + 1) % 4]
             edge = (p2[0] - p1[0], p2[1] - p1[1])
-            # 法向量
+            # 법선 벡터
             axes.append((-edge[1], edge[0]))
         
         for i in range(4):
@@ -185,34 +185,34 @@ class Rectangle:
             edge = (p2[0] - p1[0], p2[1] - p1[1])
             axes.append((-edge[1], edge[0]))
         
-        # 在每个轴上测试投影
+        # 각 축에 대해 투영 검증
         for axis in axes:
-            # 归一化
+            # 정규화
             length = math.sqrt(axis[0]**2 + axis[1]**2)
             if length < 1e-10:
                 continue
             axis = (axis[0] / length, axis[1] / length)
             
-            # 投影self
+            # 자신 투영
             self_proj = [p[0] * axis[0] + p[1] * axis[1] for p in self_corners]
             self_min, self_max = min(self_proj), max(self_proj)
             
-            # 投影other
+            # 타인 투영
             other_proj = [p[0] * axis[0] + p[1] * axis[1] for p in other_corners]
             other_min, other_max = min(other_proj), max(other_proj)
             
-            # 检查是否有间隙（考虑clearance）
+            # 간격이 존재하는지 확인 (clearance 고려)
             if self_max + clearance < other_min or other_max + clearance < self_min:
                 return False
         
         return True
     
     def distance_to(self, other: 'Rectangle') -> float:
-        """计算两个矩形之间的最小距离"""
+        """두 직사각형 간의 최소 거리 계산"""
         if self.intersects(other):
             return 0.0
         
-        # 计算中心距离
+        # 중심 거리 계산
         dx = abs(self.x - other.x) - (self.w + other.w) / 2
         dy = abs(self.y - other.y) - (self.h + other.h) / 2
         
@@ -223,7 +223,7 @@ class Rectangle:
 
 
 class Component:
-    """元件对象"""
+    """부품 객체"""
     def __init__(self, ref: str, fp, x: float, y: float, rotation: float, 
                  value: str, comp_type: str, size: Tuple[float, float]):
         self.ref = ref
@@ -238,7 +238,7 @@ class Component:
         self.pads = {}  # pin_num -> (pos_x, pos_y, net_name)
     
     def get_pad_position(self, pin_num: int) -> Optional[Tuple[float, float]]:
-        """获取焊盘位置"""
+        """패드 위치 획득"""
         for pad in self.footprint.Pads():
             if int(pad.GetNumber()) == pin_num:
                 pos = pad.GetPosition()
@@ -247,7 +247,7 @@ class Component:
 
 
 class TrackSegment:
-    """走线段"""
+    """배선 세그먼트"""
     def __init__(self, x1: float, y1: float, x2: float, y2: float, 
                  width: float, layer: int, net_name: str):
         self.x1 = x1
@@ -260,23 +260,23 @@ class TrackSegment:
         self.length = math.sqrt((x2-x1)**2 + (y2-y1)**2)
     
     def get_bounding_box(self, clearance: float = 0.0) -> Rectangle:
-        """获取带clearance的边界框"""
+        """clearance가 적용된 바운딩 박스 획득"""
         cx = (self.x1 + self.x2) / 2
         cy = (self.y1 + self.y2) / 2
         
-        # 计算旋转角度
+        # 회전 각도 계산
         dx = self.x2 - self.x1
         dy = self.y2 - self.y1
         angle = math.degrees(math.atan2(dy, dx))
         
-        # 长度和宽度
+        # 길이 및 폭
         length = math.sqrt(dx**2 + dy**2)
         total_width = self.width + 2 * clearance
         
         return Rectangle(cx, cy, length, total_width, angle)
     
     def point_to_segment_distance(self, px: float, py: float) -> float:
-        """点到线段的距离"""
+        """점에서 선분까지의 거리"""
         dx = self.x2 - self.x1
         dy = self.y2 - self.y1
         
@@ -292,7 +292,7 @@ class TrackSegment:
 
 
 class Via:
-    """过孔"""
+    """비아"""
     def __init__(self, x: float, y: float, diameter: float, drill: float, net_name: str):
         self.x = x
         self.y = y
@@ -302,12 +302,12 @@ class Via:
         self.radius = diameter / 2
     
     def get_clearance_radius(self, extra_clearance: float = 0.0) -> float:
-        """获取带clearance的半径"""
+        """clearance가 적용된 반경 획득"""
         return self.radius + extra_clearance
 
 
 class DRCChecker:
-    """DRC检查器 - 完整设计规则检查"""
+    """DRC 검사기 - 상세 디자인 룰 검사"""
     
     def __init__(self, board, components: List[Component], 
                  tracks: List[TrackSegment], vias: List[Via]):
@@ -319,42 +319,42 @@ class DRCChecker:
         self.warnings: List[str] = []
     
     def check_component_clearance(self) -> bool:
-        """检查元件间距"""
-        print("\n[1] 检查元件间距...")
+        """부품 간격 검사"""
+        print("\n[1] 부품 간격 검사...")
         passed = True
         
         for i, comp1 in enumerate(self.components):
             for comp2 in self.components[i+1:]:
-                # 获取最小间距要求
+                # 최소 간격 조건 획득
                 min_clearance = self._get_min_spacing(comp1, comp2)
                 
-                # 检查是否相交
+                # 중첩 여부 확인
                 if comp1.rect.intersects(comp2.rect, min_clearance):
                     dist = comp1.rect.distance_to(comp2.rect)
-                    msg = f"间距违规: {comp1.ref} 与 {comp2.ref}, 实际间距 {dist:.2f}mm < {min_clearance}mm"
+                    msg = f"간격 위반: {comp1.ref} 및 {comp2.ref}, 실제 간격 {dist:.2f}mm < {min_clearance}mm"
                     self.violations.append(msg)
                     print(f"  ✗ {msg}")
                     passed = False
         
         if passed:
-            print("  ✓ 所有元件间距合格")
+            print("  ✓ 모든 부품 간격 합격")
         return passed
     
     def check_track_clearance(self) -> bool:
-        """检查走线间距"""
-        print("\n[2] 检查走线间距...")
+        """배선 간격 검사"""
+        print("\n[2] 배선 간격 검사...")
         passed = True
         
         min_clearance = DRC_RULES['min_clearance_track_to_track']
         
-        # 检查走线vs走线
+        # 배선 vs 배선
         for i, track1 in enumerate(self.tracks):
             for track2 in self.tracks[i+1:]:
-                # 同网络跳过
+                # 동일 넷 건너뛰기
                 if track1.net_name == track2.net_name and track1.net_name != "":
                     continue
                 
-                # 检查是否共享起点或终点（连接到同一焊盘）
+                # 동일 패드에 연결되는 시점/종점 공유 여부 확인
                 def points_equal(p1, p2, tolerance=0.001):
                     return abs(p1[0] - p2[0]) < tolerance and abs(p1[1] - p2[1]) < tolerance
                 
@@ -369,42 +369,42 @@ class DRCChecker:
                     points_equal(track1_end, track2_end)):
                     continue
                 
-                # 快速边界框检查
+                # 빠른 바운딩 박스 검사
                 bb1 = track1.get_bounding_box(min_clearance)
                 bb2 = track2.get_bounding_box(min_clearance)
                 
                 if bb1.intersects(bb2):
-                    # 精确距离检查
+                    # 정밀 거리 검사
                     dist = self._track_to_track_distance(track1, track2)
                     if dist < min_clearance:
-                        msg = f"走线间距不足: '{track1.net_name}' 与 '{track2.net_name}', 距离 {dist:.3f}mm"
+                        msg = f"배선 간격 부족: '{track1.net_name}' 및 '{track2.net_name}', 거리 {dist:.3f}mm"
                         self.violations.append(msg)
                         print(f"  ✗ {msg}")
                         passed = False
         
         if passed:
-            print(f"  ✓ 走线间距合格 (最小 {min_clearance}mm)")
+            print(f"  ✓ 배선 간격 합격 (최소 {min_clearance}mm)")
         return passed
     
     def check_track_to_component(self) -> bool:
-        """检查走线到元件的间距"""
-        print("\n[3] 检查走线到元件间距...")
+        """배선-부품 간격 검사"""
+        print("\n[3] 배선-부품 간격 검사...")
         passed = True
         
         min_clearance = DRC_RULES['min_clearance_track_to_pad']
         
         for track in self.tracks:
             for comp in self.components:
-                # 快速边界框检查
+                # 빠른 바운딩 박스 검사
                 track_bb = track.get_bounding_box(min_clearance)
                 
                 if track_bb.intersects(comp.rect):
-                    # 检查到各个焊盘的距离
+                    # 각 패드와의 거리 검사
                     for pad in comp.footprint.Pads():
                         pad_pos = pad.GetPosition()
                         px, py = pcbnew.ToMM(pad_pos.x), pcbnew.ToMM(pad_pos.y)
                         
-                        # 跳过同网络焊盘
+                        # 동일 넷 패드 건너뛰기
                         try:
                             pad_net = pad.GetNet()
                             if pad_net and pad_net.GetNetname() == track.net_name:
@@ -416,22 +416,22 @@ class DRCChecker:
                         pad_size = pcbnew.ToMM(max(pad.GetSize().x, pad.GetSize().y))
                         
                         if dist < (min_clearance + pad_size / 2):
-                            msg = f"走线到焊盘间距不足: {track.net_name} 到 {comp.ref}, 距离 {dist:.3f}mm"
+                            msg = f"배선-패드 간격 부족: {track.net_name}에서 {comp.ref}까지, 거리 {dist:.3f}mm"
                             self.warnings.append(msg)
                             print(f"  ⚠ {msg}")
         
         if passed and not self.warnings:
-            print(f"  ✓ 走线到元件间距合格")
+            print(f"  ✓ 배선-부품 간격 합격")
         return passed
     
     def check_via_clearance(self) -> bool:
-        """检查过孔间距"""
-        print("\n[4] 检查过孔间距...")
+        """비아 간격 검사"""
+        print("\n[4] 비아 간격 검사...")
         passed = True
         
         min_clearance = DRC_RULES['min_clearance_track_to_via']
         
-        # 过孔vs走线
+        # 비아 vs 배선
         for via in self.vias:
             for track in self.tracks:
                 if via.net_name == track.net_name:
@@ -439,11 +439,11 @@ class DRCChecker:
                 
                 dist = track.point_to_segment_distance(via.x, via.y)
                 if dist < (via.get_clearance_radius(min_clearance)):
-                    msg = f"过孔到走线间距不足: {via.net_name} 到 {track.net_name}, 距离 {dist:.3f}mm"
+                    msg = f"비아-배선 간격 부족: {via.net_name}에서 {track.net_name}까지, 거리 {dist:.3f}mm"
                     self.warnings.append(msg)
                     print(f"  ⚠ {msg}")
         
-        # 过孔vs过孔
+        # 비아 vs 비아
         for i, via1 in enumerate(self.vias):
             for via2 in self.vias[i+1:]:
                 if via1.net_name == via2.net_name:
@@ -453,20 +453,20 @@ class DRCChecker:
                 min_dist = via1.radius + via2.radius + min_clearance
                 
                 if dist < min_dist:
-                    msg = f"过孔间距不足: 距离 {dist:.3f}mm < {min_dist:.3f}mm"
+                    msg = f"비아 간격 부족: 거리 {dist:.3f}mm < {min_dist:.3f}mm"
                     self.violations.append(msg)
                     print(f"  ✗ {msg}")
                     passed = False
         
         if passed:
-            print(f"  ✓ 过孔间距合格")
+            print(f"  ✓ 비아 간격 합격")
         return passed
     
     def check_unconnected_nets(self) -> bool:
-        """检查未连接网络"""
-        print("\n[5] 检查网络连接...")
+        """미연결 넷 검사"""
+        print("\n[5] 넷 연결 검사...")
         
-        # 统计每个网络的焊盘数量
+        # 넷별 패드 개수 집계
         net_pad_counts: Dict[str, int] = {}
         for comp in self.components:
             for pad in comp.footprint.Pads():
@@ -479,28 +479,28 @@ class DRCChecker:
                 except:
                     pass
         
-        # 检查每个网络的连接性
+        # 각 넷의 연결 상태 검사
         unconnected = []
         for net_name, expected_pins in [(k, len(v['pins'])) for k, v in NET_DEFS.items()]:
             actual_count = net_pad_counts.get(net_name, 0)
             if actual_count < expected_pins:
-                unconnected.append(f"{net_name}: {actual_count}/{expected_pins} 焊盘")
+                unconnected.append(f"{net_name}: {actual_count}/{expected_pins} 패드")
         
         if unconnected:
-            print(f"  ⚠ 发现未完全连接网络:")
+            print(f"  ⚠ 미완료 연결 넷 발견:")
             for msg in unconnected:
                 print(f"    - {msg}")
         else:
-            print("  ✓ 所有网络连接正常")
+            print("  ✓ 모든 넷 연결 정상")
         
         return len(unconnected) == 0
     
     def check_short_circuits(self) -> bool:
-        """检查短路"""
-        print("\n[6] 检查短路...")
+        """쇼트(단락) 검사"""
+        print("\n[6] 쇼트(단락) 검사...")
         passed = True
         
-        # 检查不同网络的重叠焊盘
+        # 서로 다른 넷의 중첩 패드 검사
         for comp in self.components:
             pads_by_pos: Dict[Tuple[int, int], List[Tuple[int, str]]] = {}
             
@@ -518,44 +518,44 @@ class DRCChecker:
                     pads_by_pos[key] = []
                 pads_by_pos[key].append((int(pad.GetNumber()), net_name))
             
-            # 检查同一位置的不同网络
+            # 동일 좌표상에 서로 다른 넷 존재 여부 확인
             for pos, pads in pads_by_pos.items():
                 nets = set(p[1] for p in pads if p[1])
                 if len(nets) > 1:
-                    msg = f"潜在短路: {comp.ref} 位置 {pos} 有多个网络: {nets}"
+                    msg = f"쇼트 위험: {comp.ref} 위치 {pos}에 여러 넷이 존재합니다: {nets}"
                     self.violations.append(msg)
                     print(f"  ✗ {msg}")
                     passed = False
         
         if passed:
-            print("  ✓ 无短路风险")
+            print("  ✓ 쇼트 위험 없음")
         return passed
     
     def check_board_edges(self) -> bool:
-        """检查元件是否超出板边"""
-        print("\n[7] 检查板边...")
+        """부품이 보드 외곽선을 초과하는지 검사"""
+        print("\n[7] 보드 외곽 검사...")
         passed = True
         
-        margin = 1.0  # 板边余量
+        margin = 1.0  # 보드 여유 간격
         
         for comp in self.components:
             corners = comp.rect.get_corners()
             for cx, cy in corners:
                 if cx < -margin or cx > BOARD_WIDTH + margin or \
                    cy < -margin or cy > BOARD_HEIGHT + margin:
-                    msg = f"{comp.ref} 超出板边: ({cx:.1f}, {cy:.1f})"
-                    self.violations.append(msg)
-                    print(f"  ✗ {msg}")
-                    passed = False
+                     msg = f"{comp.ref} 보드 외곽 초과: ({cx:.1f}, {cy:.1f})"
+                     self.violations.append(msg)
+                     print(f"  ✗ {msg}")
+                     passed = False
         
         if passed:
-            print("  ✓ 所有元件在板内")
+            print("  ✓ 모든 부품 보드 내 배치")
         return passed
     
     def run_all_checks(self) -> bool:
-        """运行所有DRC检查"""
+        """모든 DRC 검사 실행"""
         print("\n" + "=" * 60)
-        print("DRC检查开始")
+        print("DRC 검사 시작")
         print("=" * 60)
         
         results = []
@@ -568,45 +568,45 @@ class DRCChecker:
         results.append(self.check_board_edges())
         
         print("\n" + "=" * 60)
-        print("DRC检查结果")
+        print("DRC 검사 결과")
         print("=" * 60)
         
         if self.violations:
-            print(f"✗ 发现 {len(self.violations)} 个错误:")
-            for v in self.violations[:10]:  # 只显示前10个
+            print(f"✗ {len(self.violations)}개의 오류 발견:")
+            for v in self.violations[:10]:  # 상위 10개만 표시
                 print(f"  - {v}")
             if len(self.violations) > 10:
-                print(f"  ... 还有 {len(self.violations) - 10} 个错误")
+                print(f"  ... 외 {len(self.violations) - 10}개의 오류가 더 있습니다")
         else:
-            print("✓ 无DRC错误")
+            print("✓ DRC 오류 없음")
         
         if self.warnings:
-            print(f"\n⚠ 发现 {len(self.warnings)} 个警告")
+            print(f"\n⚠ {len(self.warnings)}개의 경고 발견")
         
         print("=" * 60)
         
         return all(results) and len(self.violations) == 0
     
     def _get_min_spacing(self, comp1: Component, comp2: Component) -> float:
-        """获取两个元件的最小间距"""
-        # 特殊规则
+        """두 부품 간 최소 간격 획득"""
+        # 예외 규칙
         if (comp1.comp_type == 'crystal' and comp2.comp_type in ['cap', 'decoupling']) or \
            (comp2.comp_type == 'crystal' and comp1.comp_type in ['cap', 'decoupling']):
             return SPACING_RULES['crystal_to_cap']
         
-        # 0402元件
+        # 0402 부품
         if '0402' in comp1.value or '0402' in comp2.value:
             return SPACING_RULES['smd_0402']
         
-        # 连接器
+        # 커넥터
         if comp1.comp_type == 'connector' or comp2.comp_type == 'connector':
             return SPACING_RULES['connector']
         
         return SPACING_RULES['default']
     
     def _track_to_track_distance(self, track1: TrackSegment, track2: TrackSegment) -> float:
-        """计算两条走线之间的最小距离"""
-        # 端点距离
+        """두 배선 간 최소 거리 계산"""
+        # 엔드포인트 거리
         distances = [
             track1.point_to_segment_distance(track2.x1, track2.y1),
             track1.point_to_segment_distance(track2.x2, track2.y2),
@@ -617,54 +617,54 @@ class DRCChecker:
 
 
 class ZoneManager:
-    """铜皮管理器"""
+    """동박 관리자"""
     
     def __init__(self, board):
         self.board = board
         self.zones = []
     
     def create_copper_zone(self, net_name: str, layer: int, 
-                          points: List[Tuple[float, float]], 
-                          clearance: float = 0.5, 
-                          min_width: float = 0.3) -> pcbnew.ZONE:
-        """创建铜皮区域"""
+                           points: List[Tuple[float, float]], 
+                           clearance: float = 0.5, 
+                           min_width: float = 0.3) -> pcbnew.ZONE:
+        """동박 영역 생성"""
         zone = pcbnew.ZONE(self.board)
         
-        # 设置网络
+        # 넷 설정
         net = self.board.FindNet(net_name)
         if not net:
             net = pcbnew.NETINFO_ITEM(self.board, net_name)
             self.board.Add(net)
         zone.SetNet(net)
         
-        # 设置层
+        # 레이어 설정
         zone.SetLayer(layer)
         
-        # 设置参数
+        # 매개변수 설정
         zone.SetMinThickness(pcbnew.FromMM(min_width))
         
-        # 设置轮廓
+        # 외곽선 설정
         outline = zone.Outline()
         outline.NewOutline()
         
         for x, y in points:
             outline.Append(pcbnew.FromMM(x), pcbnew.FromMM(y))
         
-        # 填充设置
+        # 채우기 설정
         zone.SetIsFilled(True)
         zone.SetFillMode(pcbnew.ZONE_FILL_MODE_POLYGONS)
         
-        # 添加到板
+        # 보드에 추가
         self.board.Add(zone)
         self.zones.append(zone)
         
         return zone
     
     def create_ground_plane(self):
-        """创建GND平面"""
-        print("\n[16] 创建GND平面...")
+        """GND 평면 생성"""
+        print("\n[16] GND 평면 생성...")
         
-        # 顶层GND
+        # 탑 GND
         top_points = [
             (1, 1),
             (BOARD_WIDTH - 1, 1),
@@ -673,7 +673,7 @@ class ZoneManager:
         ]
         self.create_copper_zone("GND", pcbnew.F_Cu, top_points)
         
-        # 底层GND
+        # 바텀 GND
         bottom_points = [
             (1, 1),
             (BOARD_WIDTH - 1, 1),
@@ -682,13 +682,13 @@ class ZoneManager:
         ]
         self.create_copper_zone("GND", pcbnew.B_Cu, bottom_points)
         
-        print("  ✓ 创建顶层和底层GND平面")
+        print("  ✓ 탑 및 바텀 GND 평면 생성 완료")
     
     def create_power_plane(self):
-        """创建3V3电源岛"""
-        print("\n[17] 创建3V3电源岛...")
+        """3V3 전원 아일랜드 생성"""
+        print("\n[17] 3V3 전원 아일랜드 생성...")
         
-        # MCU周围3V3电源岛
+        # MCU 주변 3V3 전원 아일랜드
         mcu_margin = 8.0
         points = [
             (MCU_CENTER_X - mcu_margin, MCU_CENTER_Y - mcu_margin),
@@ -698,11 +698,11 @@ class ZoneManager:
         ]
         
         self.create_copper_zone("3V3", pcbnew.F_Cu, points)
-        print("  ✓ 创建3V3电源岛")
+        print("  ✓ 3V3 전원 아일랜드 생성 완료")
 
 
 class PCBDesigner:
-    """PCB设计主控类"""
+    """PCB 설계 메인 제어 클래스"""
     
     def __init__(self):
         self.board = None
@@ -714,12 +714,12 @@ class PCBDesigner:
         self.zone_manager = None
     
     def create_board(self):
-        """创建PCB板"""
-        print("\n创建PCB板...")
+        """PCB 보드 생성"""
+        print("\nPCB 보드 생성...")
         self.board = pcbnew.BOARD()
         self.board.SetFileName(OUTPUT_FILE)
         
-        # 创建板框
+        # 보드 외곽선 생성
         corners = [(0, 0), (BOARD_WIDTH, 0), (BOARD_WIDTH, BOARD_HEIGHT), (0, BOARD_HEIGHT), (0, 0)]
         for i in range(len(corners) - 1):
             seg = pcbnew.PCB_SHAPE(self.board)
@@ -729,18 +729,18 @@ class PCBDesigner:
             seg.SetShape(pcbnew.SHAPE_T_SEGMENT)
             self.board.Add(seg)
         
-        print(f"✓ 创建 {BOARD_WIDTH}x{BOARD_HEIGHT}mm 板框")
+        print(f"✓ {BOARD_WIDTH}x{BOARD_HEIGHT}mm 보드 외곽선 생성 완료")
         
-        # 初始化管理器
+        # 관리자 초기화
         self.zone_manager = ZoneManager(self.board)
     
     def place_components(self):
-        """放置所有元件"""
+        """모든 부품 배치"""
         print("\n" + "=" * 60)
-        print("放置元件")
+        print("부품 배치")
         print("=" * 60)
         
-        # MCU边缘坐标
+        # MCU 외곽 좌표
         mcu_left = MCU_CENTER_X - MCU_HALF
         mcu_right = MCU_CENTER_X + MCU_HALF
         mcu_top = MCU_CENTER_Y - MCU_HALF
@@ -749,16 +749,16 @@ class PCBDesigner:
         placements = [
             # (ref, x, y, rotation)
             ("U1", MCU_CENTER_X, MCU_CENTER_Y, 0),
-            # === 晶振区域 - 垂直错开布局避免走线重叠 ===
-            # LQFP48: Pin5=OSC_IN(Y=23.5), Pin6=OSC_OUT(Y=24.0), 封装边缘X=26.5
-            # Y1 Pin1对齐OSC_IN, Pin3在下方 - 垂直分离避免走线重叠
+            # === 크리스탈 영역 - 배선 중첩 방지를 위해 수직 어긋남 배치 ===
+            # LQFP48: Pin5=OSC_IN(Y=23.5), Pin6=OSC_OUT(Y=24.0), 패키지 가장자리 X=26.5
+            # Y1 핀1은 OSC_IN에 맞추고 핀3은 하단에 배치 - 배선 중첩 방지를 위해 수직 분리
             ("Y1", mcu_left - 4.5, mcu_top + 2.5, 0),          # (22.0, 24.0), Pin1@Y=22.75, Pin3@Y=25.25
-            ("C1", mcu_left - 4.5, mcu_top + 0.2, 90),         # Y1下方, 连接Pin1(GND侧)
-            ("C2", mcu_left - 4.5, mcu_top + 6.3, 90),         # Y1下方2mm, 垂直分离
-            # === 复位电路区域 - 避免重叠 ===
-            ("R1", mcu_left - 10.0, MCU_CENTER_Y, 0),          # 左移避免与SW1重叠
-            ("C3", mcu_left - 10.0, MCU_CENTER_Y - 2.5, 0),    # 跟随R1
-            ("SW1", 10.0, MCU_CENTER_Y, 0),                    # 远离开关区域
+            ("C1", mcu_left - 4.5, mcu_top + 0.2, 90),         # Y1 아래, Pin1 연결 (GND 측)
+            ("C2", mcu_left - 4.5, mcu_top + 6.3, 90),         # Y1 아래 2mm, 수직 분리
+            # === 리셋 회로 영역 - 중첩 방지 ===
+            ("R1", mcu_left - 10.0, MCU_CENTER_Y, 0),          # SW1과의 중첩 방지를 위해 좌측 이동
+            ("C3", mcu_left - 10.0, MCU_CENTER_Y - 2.5, 0),    # R1에 밀착
+            ("SW1", 10.0, MCU_CENTER_Y, 0),                    # 스위치 영역에서 격리
             ("C4", mcu_left - 2.0, mcu_top - 2.0, 0),
             ("C5", mcu_right + 2.0, mcu_top - 2.0, 0),
             ("C6", mcu_right + 2.0, mcu_bottom + 2.0, 0),
@@ -775,7 +775,7 @@ class PCBDesigner:
             ("J2", BOARD_WIDTH - 5.0, BOARD_HEIGHT - 8.0, 0),
             ("C11", BOARD_WIDTH - 12.0 - 5.0, BOARD_HEIGHT - 12.0, 0),
             ("C13", BOARD_WIDTH - 12.0, BOARD_HEIGHT - 12.0 - 5.0, 0),
-            ("J3", BOARD_WIDTH - 15.0, MCU_CENTER_Y, 90),  # 居中放置，2x10 header宽25.4mm
+            ("J3", BOARD_WIDTH - 15.0, MCU_CENTER_Y, 90),  # 중앙에 배치, 2x10 헤더 폭 25.4mm
         ]
         
         for ref, x, y, rotation in placements:
@@ -786,14 +786,14 @@ class PCBDesigner:
             fp = self._load_footprint(comp_def['lib'], comp_def['fp'])
             
             if not fp:
-                print(f"  ✗ {ref}: 无法加载封装")
+                print(f"  ✗ {ref}: 풋프린트를 로드할 수 없습니다")
                 continue
             
-            # ========== 实时重叠检查 ==========
-            # 创建临时矩形进行碰撞检测
+            # ========== 실시간 중첩 검사 ==========
+            # 충돌 검사용 임시 직사각형 생성
             temp_rect = Rectangle(x, y, comp_def['size'][0], comp_def['size'][1], rotation)
             
-            # 检查与已放置元件的碰撞
+            # 이미 배치된 부품과의 충돌 검사
             overlap_found = False
             for existing_comp in self.components:
                 min_spacing = self._get_min_spacing_for_types(
@@ -801,15 +801,15 @@ class PCBDesigner:
                 )
                 if temp_rect.intersects(existing_comp.rect, min_spacing):
                     dist = temp_rect.distance_to(existing_comp.rect)
-                    print(f"  ✗ {ref}: 与 {existing_comp.ref} 重叠！间距 {dist:.2f}mm < {min_spacing}mm")
+                    print(f"  ✗ {ref}: {existing_comp.ref}와(과) 중첩! 간격 {dist:.2f}mm < {min_spacing}mm")
                     overlap_found = True
                     break
             
             if overlap_found:
-                print(f"  ⚠ 跳过放置 {ref}，请调整坐标")
+                print(f"  ⚠ {ref} 배치를 건너뜁니다. 좌표를 조정해 주세요")
                 continue
             
-            # 检查与MCU(U1)的边界碰撞（U1还没放置时跳过）
+            # MCU(U1)와의 경계 충돌 검사 (U1이 배치되지 않은 경우 건너뜀)
             if ref != "U1" and self.components:
                 u1_comp = None
                 for c in self.components:
@@ -817,21 +817,21 @@ class PCBDesigner:
                         u1_comp = c
                         break
                 if u1_comp:
-                    # 根据元件类型设置与MCU的间距要求
+                    # 부품 유형에 따라 MCU와의 요구 간격 설정
                     if comp_def['type'] == 'decoupling':
-                        mcu_clearance = 0.5  # 去耦电容可以贴近MCU
+                        mcu_clearance = 0.5  # 디커플링 콘덴서는 MCU 근처에 배치 가능
                     elif comp_def['type'] == 'crystal':
-                        mcu_clearance = 1.5  # 晶振需要1.5mm间距
+                        mcu_clearance = 1.5  # 크리스탈은 1.5mm 간격 필요
                     else:
-                        mcu_clearance = 2.0  # 其他元件保持2mm
+                        mcu_clearance = 2.0  # 기타 부품은 2mm 유지
                     
                     if temp_rect.intersects(u1_comp.rect, mcu_clearance):
                         dist = temp_rect.distance_to(u1_comp.rect)
-                        print(f"  ✗ {ref}: 距离MCU太近！间距 {dist:.2f}mm < {mcu_clearance}mm")
-                        print(f"  ⚠ 跳过放置 {ref}，请调整坐标")
+                        print(f"  ✗ {ref}: MCU에 너무 가깝습니다! 간격 {dist:.2f}mm < {mcu_clearance}mm")
+                        print(f"  ⚠ {ref} 배치를 건너뜁니다. 좌표를 조정해 주세요")
                         continue
             
-            # 放置元件
+            # 부품 배치
             fp.SetPosition(pcbnew.VECTOR2I(pcbnew.FromMM(x), pcbnew.FromMM(y)))
             if rotation != 0:
                 fp.SetOrientation(pcbnew.EDA_ANGLE(rotation, pcbnew.DEGREES_T))
@@ -840,15 +840,15 @@ class PCBDesigner:
             
             self.board.Add(fp)
             
-            # 创建Component对象
+            # Component 객체 생성
             comp = Component(ref, fp, x, y, rotation, 
                            comp_def['value'], comp_def['type'], comp_def['size'])
             self.components.append(comp)
             
             print(f"  ✓ {ref} @ ({x:5.1f}, {y:5.1f}) [{comp_def['size'][0]:.1f}x{comp_def['size'][1]:.1f}mm]")
         
-        # 添加安装孔
-        print("\n添加安装孔...")
+        # 마운팅 홀 추가
+        print("\n마운팅 홀 추가...")
         holes = [(4, 4), (BOARD_WIDTH-4, 4), (BOARD_WIDTH-4, BOARD_HEIGHT-4), (4, BOARD_HEIGHT-4)]
         for x, y in holes:
             via = pcbnew.PCB_VIA(self.board)
@@ -856,14 +856,14 @@ class PCBDesigner:
             via.SetDrill(pcbnew.FromMM(3.2))
             via.SetWidth(pcbnew.FromMM(5.0))
             self.board.Add(via)
-        print(f"  ✓ 添加 4 个M3安装孔")
+        print(f"  ✓ 4개의 M3 마운팅 홀 추가 완료")
     
     def assign_nets(self):
-        """分配网络"""
-        print("\n分配网络...")
+        """넷 할당"""
+        print("\n넷 할당...")
         
         for net_name, net_def in NET_DEFS.items():
-            # 创建网络
+            # 넷 생성
             net = None
             try:
                 net = self.board.FindNet(net_name)
@@ -874,7 +874,7 @@ class PCBDesigner:
                 net = pcbnew.NETINFO_ITEM(self.board, net_name)
                 self.board.Add(net)
             
-            # 分配焊盘
+            # 패드 할당
             for ref, pin_numbers in net_def['pins']:
                 comp = self._find_component(ref)
                 if not comp:
@@ -884,7 +884,7 @@ class PCBDesigner:
                     try:
                         if int(pad.GetNumber()) in pin_numbers:
                             pad.SetNet(net)
-                            # 记录焊盘网络
+                            # 패드 넷 기록
                             pos = pad.GetPosition()
                             comp.pads[int(pad.GetNumber())] = (
                                 pcbnew.ToMM(pos.x), pcbnew.ToMM(pos.y), net_name
@@ -892,22 +892,22 @@ class PCBDesigner:
                     except:
                         pass
         
-        print(f"✓ 分配 {len(NET_DEFS)} 个网络")
+        print(f"✓ {len(NET_DEFS)}개의 넷 할당 완료")
     
     def route_tracks(self):
-        """布线"""
+        """배선"""
         print("\n" + "=" * 60)
-        print("开始布线")
+        print("배선 시작")
         print("=" * 60)
         
         track_count = 0
         
-        # 1. 晶振布线 - 使用星型拓扑
-        print("\n[1] 晶振布线...")
+        # 1. 크리스탈 배선 - 스타 토폴로지 구조 사용
+        print("\n[1] 크리스탈 배선...")
         track_count += self._route_crystal_tracks()
         
-        # 2. 去耦电容布线
-        print("\n[2] 去耦电容布线...")
+        # 2. 디커플링 콘덴서 배선
+        print("\n[2] 디커플링 콘덴서 배선...")
         decoupling_routes = [
             (("C4", 1), ("U1", 1), 0.3, "VBAT"),
             (("C5", 1), ("U1", 9), 0.3, "VDDA"),
@@ -922,8 +922,8 @@ class PCBDesigner:
             if self._create_track(ref1, pin1, ref2, pin2, width, net):
                 track_count += 1
         
-        # 3. 电源布线
-        print("\n[3] 电源布线...")
+        # 3. 전원 배선
+        print("\n[3] 전원 배선...")
         power_routes = [
             (("J2", 1), ("C11", 1), 0.5, "5V_IN"),
             (("C11", 1), ("U2", 1), 0.5, "5V_IN"),
@@ -934,8 +934,8 @@ class PCBDesigner:
             if self._create_track(ref1, pin1, ref2, pin2, width, net):
                 track_count += 1
         
-        # 4. 复位和BOOT布线
-        print("\n[4] 控制信号布线...")
+        # 4. 리셋 및 BOOT 배선
+        print("\n[4] 제어 신호 배선...")
         ctrl_routes = [
             (("U1", 7), ("R1", 1), 0.2, "NRST"),
             (("R1", 1), ("SW1", 1), 0.2, "NRST"),
@@ -950,25 +950,25 @@ class PCBDesigner:
             if self._create_track(ref1, pin1, ref2, pin2, width, net):
                 track_count += 1
         
-        print(f"\n✓ 完成 {track_count} 条走线")
+        print(f"\n✓ {track_count}개의 배선 완료")
     
     def add_vias(self):
-        """添加过孔"""
-        print("\n添加过孔...")
+        """비아 추가"""
+        print("\n비아 추가...")
         
-        # === 晶振屏蔽过孔 - 形成法拉第笼 ===
+        # === 크리스탈 쉴드 비아 - 패러데이 케이지 생성 ===
         y1 = self._find_component("Y1")
         if y1:
-            # 8个过孔围绕晶振：四角 + 四边中点
+            # 크리스탈 주변 8개 비아: 네 모퉁이 + 네 변의 중앙
             via_positions = [
-                (y1.x - 2.5, y1.y - 2.0, "GND"),  # 左下
-                (y1.x + 2.5, y1.y - 2.0, "GND"),  # 右下
-                (y1.x - 2.5, y1.y + 2.0, "GND"),  # 左上
-                (y1.x + 2.5, y1.y + 2.0, "GND"),  # 右上
-                (y1.x - 2.5, y1.y, "GND"),        # 左边中点
-                (y1.x + 2.5, y1.y, "GND"),        # 右边中点
-                (y1.x, y1.y - 2.0, "GND"),        # 下边中点
-                (y1.x, y1.y + 2.0, "GND"),        # 上边中点
+                (y1.x - 2.5, y1.y - 2.0, "GND"),  # 좌하
+                (y1.x + 2.5, y1.y - 2.0, "GND"),  # 우하
+                (y1.x - 2.5, y1.y + 2.0, "GND"),  # 좌상
+                (y1.x + 2.5, y1.y + 2.0, "GND"),  # 우상
+                (y1.x - 2.5, y1.y, "GND"),        # 좌측 중앙
+                (y1.x + 2.5, y1.y, "GND"),        # 우측 중앙
+                (y1.x, y1.y - 2.0, "GND"),        # 하단 중앙
+                (y1.x, y1.y + 2.0, "GND"),        # 상단 중앙
             ]
             
             for vx, vy, net_name in via_positions:
@@ -977,7 +977,7 @@ class PCBDesigner:
                 via.SetDrill(pcbnew.FromMM(0.3))
                 via.SetWidth(pcbnew.FromMM(0.6))
                 
-                # 设置网络
+                # 넷 설정
                 net = self.board.FindNet(net_name)
                 if net:
                     via.SetNet(net)
@@ -985,13 +985,13 @@ class PCBDesigner:
                 self.board.Add(via)
                 self.vias.append(Via(vx, vy, 0.6, 0.3, net_name))
             
-            print(f"  ✓ 添加 8 个晶振屏蔽过孔（法拉第笼）")
+            print(f"  ✓ 8개의 크리스탈 쉴드 비아(패러데이 케이지) 추가 완료")
             
-            # 为负载电容 C1/C2 添加 GND 过孔（第2引脚）
+            # 부하 콘덴서 C1/C2의 GND 핀(2번 핀)에 비아 추가
             self._add_cap_gnd_via("C1", 2, "GND")
             self._add_cap_gnd_via("C2", 2, "GND")
         
-        # GND连接过孔
+        # GND 연결 비아
         gnd_vias = [
             (MCU_CENTER_X - 5, MCU_CENTER_Y - 5, "GND"),
             (MCU_CENTER_X + 5, MCU_CENTER_Y - 5, "GND"),
@@ -1012,37 +1012,37 @@ class PCBDesigner:
             self.board.Add(via)
             self.vias.append(Via(vx, vy, 0.6, 0.3, net_name))
         
-        print(f"  ✓ 添加 4 个GND过孔")
+        print(f"  ✓ 4개의 GND 비아 추가 완료")
     
     def create_zones(self):
-        """创建铜皮"""
+        """동박 생성"""
         self.zone_manager.create_ground_plane()
         self.zone_manager.create_power_plane()
     
     def run_drc(self) -> bool:
-        """运行DRC检查"""
+        """DRC 검사 실행"""
         self.checker = DRCChecker(self.board, self.components, self.tracks, self.vias)
         return self.checker.run_all_checks()
     
     def save(self) -> bool:
-        """保存文件"""
+        """파일 저장"""
         print("\n" + "=" * 60)
-        print("保存PCB文件...")
+        print("PCB 파일 저장 중...")
         print("=" * 60)
         
         try:
             pcbnew.SaveBoard(OUTPUT_FILE, self.board)
             abs_path = os.path.abspath(OUTPUT_FILE)
-            print(f"✓ 成功保存: {abs_path}")
+            print(f"✓ 저장 성공: {abs_path}")
             return True
         except Exception as e:
-            print(f"✗ 保存失败: {e}")
+            print(f"✗ 저장 실패: {e}")
             import traceback
             traceback.print_exc()
             return False
     
     def _load_footprint(self, lib_key: str, fp_name: str) -> Optional[pcbnew.FOOTPRINT]:
-        """加载封装"""
+        """풋프린트 로드"""
         try:
             lib_path = LIB_PATHS.get(lib_key, lib_key)
             io = pcbnew.PCB_IO_KICAD_SEXPR()
@@ -1051,41 +1051,41 @@ class PCBDesigner:
             return None
     
     def _find_component(self, ref: str) -> Optional[Component]:
-        """查找元件"""
+        """부품 검색"""
         for comp in self.components:
             if comp.ref == ref:
                 return comp
         return None
     
     def _get_min_spacing_for_types(self, type1: str, type2: str) -> float:
-        """根据元件类型获取最小间距要求"""
-        # 特殊规则：晶振与电容可以更近（匹配网络）
+        """부품 유형에 따른 최소 간격 요구조건 획득"""
+        # 예외 규칙: 크리스탈과 콘덴서는 더 가깝게 배치 가능 (매칭 네트워크)
         if (type1 == 'crystal' and type2 in ['cap', 'decoupling']) or \
            (type2 == 'crystal' and type1 in ['cap', 'decoupling']):
             return SPACING_RULES['crystal_to_cap']
         
-        # 0402 元件
+        # 0402 부품
         if type1 in ['cap', 'decoupling', 'res'] and type2 in ['cap', 'decoupling', 'res']:
             return SPACING_RULES['smd_0402']
         
-        # 连接器
+        # 커넥터
         if type1 == 'connector' or type2 == 'connector':
             return SPACING_RULES['connector']
         
-        # MCU 周围根据元件类型决定间距
+        # MCU 주변은 부품 유형에 따라 간격 결정
         if type1 == 'mcu' or type2 == 'mcu':
             other_type = type2 if type1 == 'mcu' else type1
             if other_type == 'decoupling':
-                return 0.3  # 去耦电容可以贴近MCU
+                return 0.3  # 디커플링 콘덴서는 MCU 근처 배치 가능
             elif other_type == 'crystal':
-                return 1.5  # 晶振需要1.5mm
+                return 1.5  # 크리스탈은 1.5mm 필요
             else:
                 return SPACING_RULES['decoupling_to_mcu']
         
         return SPACING_RULES['default']
     
     def _add_cap_gnd_via(self, cap_ref: str, pin_num: int, net_name: str = "GND"):
-        """为电容添加GND过孔，直接连接到底层GND平面"""
+        """콘덴서에 GND 비아를 추가하여 바텀 GND 평면에 직접 연결"""
         comp = self._find_component(cap_ref)
         if not comp:
             return
@@ -1103,11 +1103,11 @@ class PCBDesigner:
             
             self.board.Add(via)
             self.vias.append(Via(pos[0], pos[1], 0.6, 0.3, net_name))
-            print(f"    ✓ {cap_ref} pin{pin_num} -> GND过孔")
+            print(f"    ✓ {cap_ref} 핀{pin_num} -> GND 비아")
     
     def _create_track_segment(self, x1: float, y1: float, x2: float, y2: float,
                               width: float, net_name: str, layer: int = None) -> bool:
-        """创建单段走线"""
+        """단일 배선 세그먼트 생성"""
         if layer is None:
             layer = pcbnew.F_Cu
             
@@ -1117,7 +1117,7 @@ class PCBDesigner:
         track.SetStart(pcbnew.VECTOR2I(pcbnew.FromMM(x1), pcbnew.FromMM(y1)))
         track.SetEnd(pcbnew.VECTOR2I(pcbnew.FromMM(x2), pcbnew.FromMM(y2)))
 
-        # 设置网络
+        # 넷 설정
         try:
             net = self.board.FindNet(net_name)
             if net:
@@ -1127,15 +1127,15 @@ class PCBDesigner:
 
         self.board.Add(track)
 
-        # 记录走线段
+        # 배선 세그먼트 기록
         track_seg = TrackSegment(x1, y1, x2, y2, width, layer, net_name)
         self.tracks.append(track_seg)
 
         return True
 
     def _create_track(self, ref1: str, pin1: int, ref2: str, pin2: int,
-                     width: float, net_name: str) -> bool:
-        """创建走线"""
+                      width: float, net_name: str) -> bool:
+        """배선 생성"""
         comp1 = self._find_component(ref1)
         comp2 = self._find_component(ref2)
 
@@ -1148,202 +1148,202 @@ class PCBDesigner:
         if not pos1 or not pos2:
             return False
 
-        # 使用单段走线方法
+        # 단일 배선 세그먼트 생성 방법 사용
         return self._create_track_segment(pos1[0], pos1[1], pos2[0], pos2[1], width, net_name)
 
     def _route_crystal_tracks(self) -> int:
         """
-        晶振走线 - 星型拓扑结构
-        使用折线走线，确保对称等长
+        크리스탈 배선 - 스타 토폴로지 구조
+        대칭 및 등장(동일 길이)이 되도록 꺾임 배선 사용
         """
         track_count = 0
         
-        # 获取元件
+        # 부품 획득
         u1 = self._find_component("U1")
         y1 = self._find_component("Y1")
         c1 = self._find_component("C1")
         c2 = self._find_component("C2")
         
         if not all([u1, y1, c1, c2]):
-            print("  ✗ 晶振元件未全部放置")
+            print("  ✗ 크리스탈 관련 부품이 모두 배치되지 않았습니다")
             return 0
         
-        # 获取焊盘位置
+        # 패드 위치 획득
         u1_pin5 = u1.get_pad_position(5)   # OSC_IN
         u1_pin6 = u1.get_pad_position(6)   # OSC_OUT
         y1_pin1 = y1.get_pad_position(1)   # OSC_IN
         y1_pin3 = y1.get_pad_position(3)   # OSC_OUT
-        c1_pin1 = c1.get_pad_position(1)   # OSC_IN side
-        c2_pin1 = c2.get_pad_position(1)   # OSC_OUT side
+        c1_pin1 = c1.get_pad_position(1)   # OSC_IN 콘덴서 측
+        c2_pin1 = c2.get_pad_position(1)   # OSC_OUT 콘덴서 측
         
         if not all([u1_pin5, u1_pin6, y1_pin1, y1_pin3, c1_pin1, c2_pin1]):
-            print("  ✗ 无法获取晶振焊盘位置")
+            print("  ✗ 크리스탈 패드 위치를 가져올 수 없습니다")
             return 0
         
-        # 线宽
+        # 선폭
         trace_width = 0.25  # mm
         
-        # === OSC_IN 走线设计 ===
-        print("  布线 OSC_IN...")
+        # === OSC_IN 배선 설계 ===
+        print("  OSC_IN 배선 중...")
         
-        # 交汇点A：MCU Pin5 和 晶振/电容的连接点
-        # 位于 MCU 和晶振之间，稍微靠近晶振一侧
+        # 교차점 A: MCU 핀5와 크리스탈/콘덴서 연결부
+        # MCU와 크리스탈 사이에 배치하며 약간 크리스탈 쪽으로 편향
         junction_a_x = (u1_pin5[0] + y1_pin1[0]) / 2
-        junction_a_y = u1_pin5[1]  # 与 MCU Pin5 同 Y 坐标
+        junction_a_y = u1_pin5[1]  # MCU 핀5의 Y 좌표와 동일하게 설정
         
-        # 1. MCU Pin5 → 交汇点A (水平走线)
+        # 1. MCU 핀5 → 교차점 A (수평 배선)
         self._create_track_segment(u1_pin5[0], u1_pin5[1], 
                                    junction_a_x, junction_a_y, 
                                    trace_width, "OSC_IN")
         track_count += 1
         
-        # 2. 交汇点A → 晶振 Pin1 (短垂直走线)
-        # 使用 45° 拐角：先水平再垂直
+        # 2. 교차점 A → 크리스탈 핀1 (짧은 수직 배선)
+        # 45° 꺾임 적용: 먼저 수평 진행 후 수직
         mid_x = junction_a_x
         mid_y = y1_pin1[1]
         
-        # 交汇点A → 中间点 (水平)
+        # 교차점 A → 중간점 (수평)
         self._create_track_segment(junction_a_x, junction_a_y,
                                    mid_x, junction_a_y,
                                    trace_width, "OSC_IN")
         track_count += 1
         
-        # 中间点 → 晶振 Pin1 (垂直，短走线)
+        # 중간점 → 크리스탈 핀1 (수직, 짧은 배선)
         self._create_track_segment(mid_x, junction_a_y,
                                    y1_pin1[0], y1_pin1[1],
                                    trace_width, "OSC_IN")
         track_count += 1
         
-        # 3. 交汇点A → 电容 C1 Pin1
-        # 从交汇点A向下分支到C1
+        # 3. 교차점 A → 콘덴서 C1 핀1
+        # 교차점 A에서 하단 C1으로 분기
         c1_junction_x = junction_a_x
         c1_junction_y = c1_pin1[1]
         
-        # 交汇点A → C1 连接点 (垂直)
+        # 교차점 A → C1 연결점 (수직)
         self._create_track_segment(junction_a_x, junction_a_y,
                                    c1_junction_x, c1_junction_y,
                                    trace_width, "OSC_IN")
         track_count += 1
         
-        # C1 连接点 → C1 Pin1 (水平)
+        # C1 연결점 → C1 핀1 (수평)
         self._create_track_segment(c1_junction_x, c1_junction_y,
                                    c1_pin1[0], c1_pin1[1],
                                    trace_width, "OSC_IN")
         track_count += 1
         
-        # === OSC_OUT 走线设计 - 垂直错开避免与OSC_IN重叠 ===
-        print("  布线 OSC_OUT (垂直分离)...")
+        # === OSC_OUT 배선 설계 - OSC_IN과의 중첩 방지를 위해 수직 오프셋 적용 ===
+        print("  OSC_OUT 배선 중 (수직 분리)...")
         
-        # 交汇点B：向下平移2mm，与OSC_IN完全分离
+        # 교차점 B: 하단으로 2.5mm 오프셋 적용하여 OSC_IN과 완전 분리
         junction_b_x = (u1_pin6[0] + y1_pin3[0]) / 2
-        junction_b_y = u1_pin6[1] + 2.5  # 下移2.5mm实现垂直分离
+        junction_b_y = u1_pin6[1] + 2.5  # 수직 오프셋 2.5mm 적용
         
-        # 1. MCU Pin6 → 向左延伸点 (水平段)
+        # 1. MCU 핀6 → 좌측 연장점 (수평 세그먼트)
         extend_x = u1_pin6[0] - 2.0
         self._create_track_segment(u1_pin6[0], u1_pin6[1],
                                    extend_x, u1_pin6[1],
                                    trace_width, "OSC_OUT")
         track_count += 1
         
-        # 2. 垂直下降到交汇点B高度
+        # 2. 수직 하강하여 교차점 B 높이에 도달
         self._create_track_segment(extend_x, u1_pin6[1],
                                    extend_x, junction_b_y,
                                    trace_width, "OSC_OUT")
         track_count += 1
         
-        # 3. 水平到交汇点B
+        # 3. 수평 진행하여 교차점 B 도달
         self._create_track_segment(extend_x, junction_b_y,
                                    junction_b_x, junction_b_y,
                                    trace_width, "OSC_OUT")
         track_count += 1
         
-        # 4. 交汇点B → 晶振 Pin3 (垂直上升)
+        # 4. 교차점 B → 크리스탈 핀3 (수직 상승)
         self._create_track_segment(junction_b_x, junction_b_y,
                                    junction_b_x, y1_pin3[1],
                                    trace_width, "OSC_OUT")
         track_count += 1
         
-        # 5. 水平到晶振
+        # 5. 수평 진행하여 크리스탈 도달
         self._create_track_segment(junction_b_x, y1_pin3[1],
                                    y1_pin3[0], y1_pin3[1],
                                    trace_width, "OSC_OUT")
         track_count += 1
         
-        # 6. 交汇点B → 电容 C2 Pin1 (垂直下降)
+        # 6. 교차점 B → 콘덴서 C2 핀1 (수직 하강)
         self._create_track_segment(junction_b_x, junction_b_y,
                                    junction_b_x, c2_pin1[1],
                                    trace_width, "OSC_OUT")
         track_count += 1
         
-        # 7. 水平到C2
+        # 7. 수평 진행하여 C2 도달
         self._create_track_segment(junction_b_x, c2_pin1[1],
                                    c2_pin1[0], c2_pin1[1],
                                    trace_width, "OSC_OUT")
         track_count += 1
         
-        print(f"  ✓ 晶振走线完成，共 {track_count} 段")
-        print(f"    OSC_IN:  MCU→交汇点→(Y1,C1)")
-        print(f"    OSC_OUT: MCU→交汇点→(Y1,C2)")
-        print(f"    线宽: {trace_width}mm")
+        print(f"  ✓ 크리스탈 배선 완료, 총 {track_count}개 세그먼트")
+        print(f"    OSC_IN:  MCU→교차점→(Y1,C1)")
+        print(f"    OSC_OUT: MCU→교차점→(Y1,C2)")
+        print(f"    선폭: {trace_width}mm")
         
         return track_count
 
 
 def main():
     print("=" * 70)
-    print("STM32F103C8T6 最小系统 PCB设计 - 完整生产版 V7.0")
+    print("STM32F103C8T6 최소 시스템 PCB 설계 - 최종 생산 버전 V7.0")
     print("=" * 70)
-    print("特性:")
-    print("  • 精确重叠检测 (SAT分离轴定理)")
-    print("  • 走线碰撞检测 (线到元件/线到线/线到过孔)")
-    print("  • 智能铺铜 (GND平面 + 3V3电源岛)")
-    print("  • 完整DRC检查 (间距/短路/开路/板边)")
+    print("특징:")
+    print("  • 정밀 중첩 검사 (SAT 분리축 이론)")
+    print("  • 배선 충돌 검사 (배선-부품 / 배선-배선 / 배선-비아)")
+    print("  • 스마트 동박 배치 (GND 평면 + 3V3 전원 아일랜드)")
+    print("  • 완벽한 DRC 검사 (간격/쇼트/오픈/보드 외곽선)")
     print("=" * 70)
     
     designer = PCBDesigner()
     
-    # 1. 创建板
+    # 1. 보드 생성
     designer.create_board()
     
-    # 2. 放置元件
+    # 2. 부품 배치
     designer.place_components()
     
-    # 3. 分配网络
+    # 3. 넷 할당
     designer.assign_nets()
     
-    # 4. 布线
+    # 4. 배선
     designer.route_tracks()
     
-    # 5. 添加过孔
+    # 5. 비아 추가
     designer.add_vias()
     
-    # 6. 创建铜皮
+    # 6. 동박 생성
     designer.create_zones()
     
-    # 7. DRC检查
+    # 7. DRC 검사
     drc_passed = designer.run_drc()
     
-    # 8. 保存
+    # 8. 저장
     saved = designer.save()
     
-    # 9. 最终报告
+    # 9. 최종 보고서
     print("\n" + "=" * 70)
-    print("设计完成报告")
+    print("설계 완료 보고서")
     print("=" * 70)
-    print(f"元件数量: {len(designer.components)}")
-    print(f"走线数量: {len(designer.tracks)}")
-    print(f"过孔数量: {len(designer.vias)}")
-    print(f"铜皮区域: {len(designer.zone_manager.zones)}")
-    print(f"DRC状态: {'✓ 通过' if drc_passed else '✗ 有错误'}")
-    print(f"文件保存: {'✓ 成功' if saved else '✗ 失败'}")
+    print(f"부품 수량: {len(designer.components)}")
+    print(f"배선 수량: {len(designer.tracks)}")
+    print(f"비아 수량: {len(designer.vias)}")
+    print(f"동박 영역: {len(designer.zone_manager.zones)}")
+    print(f"DRC 상태: {'✓ 통과' if drc_passed else '✗ 오류 있음'}")
+    print(f"파일 저장: {'✓ 성공' if saved else '✗ 실패'}")
     print("=" * 70)
     
     if drc_passed and saved:
-        print("\n✓ PCB设计完成且通过DRC检查，可以送厂生产！")
+        print("\n✓ PCB 설계 완료 및 DRC 검사 통과! 생산 발주가 가능합니다.")
     else:
-        print("\n⚠ 设计存在问题，请检查错误并修正后再生产")
+        print("\n⚠ 설계에 문제가 있습니다. 오류를 검사하고 수정한 뒤 생산해 주세요.")
     
-    print(f"\n文件路径: {os.path.abspath(OUTPUT_FILE)}")
+    print(f"\n파일 경로: {os.path.abspath(OUTPUT_FILE)}")
 
 
 if __name__ == "__main__":

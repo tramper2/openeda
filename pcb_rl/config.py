@@ -65,7 +65,7 @@ class DRCConfig:
     min_crystal_to_mcu: float = 0.5     # mm (reduced for simpler learning)
     min_cap_to_crystal: float = 0.3     # mm
     min_track_to_component: float = 0.2 # mm
-    crystal_under禁止: float = 0.3       # mm (crystal underside forbidden zone)
+    crystal_under_forbidden: float = 0.3       # mm (crystal underside forbidden zone)
     
     @property
     def min_clearance_cells(self) -> int:
